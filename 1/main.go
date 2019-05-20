@@ -39,10 +39,10 @@ func main() {
 		AccessToken: "dev",
 	})
 	opentracing.SetGlobalTracer(tracer)
-
+	fs := http.FileServer(http.Dir("../static"))
 	mux := http.NewServeMux()
-	mux.HandleFunc("/foo", getCatHandler)
-	mux.HandleFunc("/", index)
+	mux.HandleFunc("/annotateCat", getCatHandler)
+	mux.Handle("/", fs)
 
 	mw := nethttp.Middleware(tracer, mux)
 	log.Println("Server listening on port 3000")
@@ -175,9 +175,4 @@ func finishLocalSpan(span opentracing.Span) {
 	if TraceVerbose {
 		span.Finish()
 	}
-}
-
-func prettyPrint(i interface{}) string {
-	s, _ := json.MarshalIndent(i, "", "\t")
-	return string(s)
 }

@@ -63,9 +63,10 @@ func main() {
 	})
 	opentracing.SetGlobalTracer(tracer)
 
+	fs := http.FileServer(http.Dir("../static"))
 	mux := http.NewServeMux()
-	mux.HandleFunc("/getHelloWorldCat", getCatHandler)
-	mux.HandleFunc("/", index)
+	mux.HandleFunc("/annotateCat", getCatHandler)
+	mux.Handle("/", fs)
 
 	mw := nethttp.Middleware(tracer, mux)
 	log.Println("Server listening on port 3001")

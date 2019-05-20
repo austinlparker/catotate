@@ -1,7 +1,7 @@
 package main
 
 import (
-	"fmt"
+	"context"
 	"log"
 	"net/http"
 
@@ -10,11 +10,10 @@ import (
 	"github.com/opentracing/opentracing-go"
 )
 
-const catString = `
- /\_/\
-( o.o )
- > ^ <
-`
+var (
+	serverPort = ":3001"
+	catString  = "hello, cat!"
+)
 
 func main() {
 	tracer := lightstep.NewTracer(lightstep.Options{
@@ -27,11 +26,12 @@ func main() {
 	})
 	opentracing.SetGlobalTracer(tracer)
 
-	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprintf(w, catString)
-	})
-
-	log.Fatal(http.ListenAndServe(":3000", nethttp.Middleware(tracer, http.DefaultServeMux)))
+	mux := http.NewServeMux()
+	fs := http.FileServer(http.Dir("../static"))
+	mux.Handle("/", fs)
+	mw := nethttp.Middleware(tracer, mux)
+	log.Printf("Server listening on port %s", serverPort)
+	http.ListenAndServe(serverPort, mw)
 }
 
 func getCat() {
@@ -39,5 +39,13 @@ func getCat() {
 }
 
 func annotateCat() {
+
+}
+
+func withLocalSpan(ctx context.Context) (context.Context, opentracing.Span) {
+	return nil, nil
+}
+
+func finishLocalSpan(span opentracing.Span) {
 
 }
