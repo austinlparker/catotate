@@ -18,16 +18,11 @@ import (
 	_ "image/png"
 )
 
-const catString = `
- /\_/\
-( o.o )
- > ^ <
-`
-
-var catAPIKey = "53a92b01-302f-4e4b-85d9-1a2ec03d98dc"
-
-//TraceVerbose is verbose tracing
-var TraceVerbose = os.Getenv("TRACE_LEVEL") == "local"
+var (
+	serverPort   = ":3001"
+	catAPIKey    = "53a92b01-302f-4e4b-85d9-1a2ec03d98dc"
+	traceVerbose = os.Getenv("TRACE_LEVEL") == "local"
+)
 
 func main() {
 	tracer := lightstep.NewTracer(lightstep.Options{
@@ -45,12 +40,8 @@ func main() {
 	mux.Handle("/", fs)
 
 	mw := nethttp.Middleware(tracer, mux)
-	log.Println("Server listening on port 3000")
-	http.ListenAndServe(":3000", mw)
-}
-
-func index(w http.ResponseWriter, r *http.Request) {
-	fmt.Fprintf(w, catString)
+	log.Printf("Server listening on port %s", serverPort)
+	http.ListenAndServe(serverPort, mw)
 }
 
 func getCatHandler(w http.ResponseWriter, r *http.Request) {
@@ -160,7 +151,7 @@ func unmarshalAPIResponse(ctx context.Context, b []byte) CatAPIResponse {
 }
 
 func localSpan(ctx context.Context) (context.Context, opentracing.Span) {
-	if TraceVerbose {
+	if traceVerbose {
 		pc, _, _, ok := runtime.Caller(1)
 		fnCaller := runtime.FuncForPC(pc)
 		if ok && fnCaller != nil {
@@ -172,7 +163,7 @@ func localSpan(ctx context.Context) (context.Context, opentracing.Span) {
 }
 
 func finishLocalSpan(span opentracing.Span) {
-	if TraceVerbose {
+	if traceVerbose {
 		span.Finish()
 	}
 }
