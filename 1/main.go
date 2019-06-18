@@ -110,6 +110,8 @@ func getCatAPIResponse(ctx context.Context) (CatAPIResponse, error) {
 
 	res, err := client.Do(req)
 	if err != nil {
+		ls.SetTag("error", true)
+		ls.LogEvent(err.Error())
 		return resObject, err
 	}
 	body, err := ioutil.ReadAll(res.Body)

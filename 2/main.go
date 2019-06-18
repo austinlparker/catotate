@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"image"
 	"io/ioutil"
@@ -24,20 +25,26 @@ import (
 	"github.com/opentracing/opentracing-go"
 )
 
-const catString = `
- /\_/\
-( o.o )
- > ^ <
-`
-
 var (
-	catAPIKey            = "53a92b01-302f-4e4b-85d9-1a2ec03d98dc"
-	traceVerbose         = os.Getenv("TRACE_LEVEL") == "local"
-	dpi          float64 = 72
-	fontfile             = "../luximr.ttf"
-	size         float64 = 48
-	spacing              = 1.5
-	font                 = buildFont()
+	catAPIKey             = "53a92b01-302f-4e4b-85d9-1a2ec03d98dc"
+	lsProjectKey          = "7462e3fc8a93e171b1524cec623700f5"
+	traceVerbose          = os.Getenv("TRACE_LEVEL") == "local"
+	dpi           float64 = 72
+	fontfile              = "../luximr.ttf"
+	size          float64 = 48
+	spacing               = 1.5
+	font                  = buildFont()
+	devModeConfig         = lightstep.Options{
+		Collector: lightstep.Endpoint{
+			Host:      "localhost",
+			Port:      8360,
+			Plaintext: true,
+		},
+		AccessToken: "dev",
+	}
+	prodLSConfig = lightstep.Options{
+		AccessToken: lsProjectKey,
+	}
 )
 
 func buildFont() *truetype.Font {
@@ -52,15 +59,16 @@ func buildFont() *truetype.Font {
 	return f
 }
 
+func getTracer() lightstep.Tracer {
+	if os.Getenv("LS_CONFIG") == "local" {
+		return lightstep.NewTracer(devModeConfig)
+	} else {
+		return lightstep.NewTracer(prodLSConfig)
+	}
+}
+
 func main() {
-	tracer := lightstep.NewTracer(lightstep.Options{
-		Collector: lightstep.Endpoint{
-			Host:      "localhost",
-			Port:      8360,
-			Plaintext: true,
-		},
-		AccessToken: "dev",
-	})
+	tracer := getTracer()
 	opentracing.SetGlobalTracer(tracer)
 
 	fs := http.FileServer(http.Dir("../static"))
@@ -73,26 +81,25 @@ func main() {
 	http.ListenAndServe(":3001", mw)
 }
 
-func index(w http.ResponseWriter, r *http.Request) {
-	fmt.Fprintf(w, catString)
-}
-
 func getCatHandler(w http.ResponseWriter, r *http.Request) {
 	enableCors(&w)
+
 	catAPIResponse, err := getCatAPIResponse(r.Context())
 	if err != nil {
 		http.Error(w, "could not get cat api response", http.StatusInternalServerError)
 	}
-	log.Println(catAPIResponse)
+
 	catImage, err := getCatImage(r.Context(), catAPIResponse.URL)
 	if err != nil {
 		http.Error(w, "could not get cat image", http.StatusInternalServerError)
 	}
+
 	annotationString := parseAnnotationString(r.Context(), r)
 	catData, err := annotateCat(r.Context(), catImage, annotationString)
 	if err != nil {
 		http.Error(w, "could not annotate cat image", http.StatusInternalServerError)
 	}
+
 	fmt.Fprintf(w, "%s", catData)
 	w.WriteHeader(http.StatusOK)
 }
@@ -123,7 +130,7 @@ func getCatImage(ctx context.Context, url string) (image.Image, error) {
 
 	imgData, _, err = image.Decode(res.Body)
 	if err != nil {
-		ls.LogKV(err)
+		ls.LogEvent(err.Error())
 		ls.LogEvent("failed to decode body")
 		finishLocalSpan(ls)
 		return imgData, err
@@ -178,6 +185,8 @@ func getCatAPIResponse(ctx context.Context) (CatAPIResponse, error) {
 
 func parseAnnotationString(ctx context.Context, r *http.Request) string {
 	ctx, ls := localSpan(ctx)
+	defer finishLocalSpan(ls)
+	
 	var annotationString string
 	keys, ok := r.URL.Query()["annotation"]
 
@@ -188,7 +197,6 @@ func parseAnnotationString(ctx context.Context, r *http.Request) string {
 		annotationString = keys[0]
 	}
 
-	finishLocalSpan(ls)
 	return annotationString
 }
 
@@ -201,6 +209,10 @@ func annotateCat(ctx context.Context, picture image.Image, s string) (string, er
 		c = buildRGBAContext(ctx, picture)
 	case *image.NRGBA:
 		c = buildNRGBAContext(ctx, picture)
+	default:
+		ls.SetTag("error", true)
+		ls.LogEvent(fmt.Sprintf("unexpected type %T", picture))
+		return "", errors.New("unexpected type")
 	}
 
 	pt := freetype.Pt(10, 10+int(c.PointToFixed(size)>>6))

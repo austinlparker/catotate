@@ -4,6 +4,8 @@ import (
 	"context"
 	"log"
 	"net/http"
+	"os"
+	"runtime"
 
 	"github.com/lightstep/lightstep-tracer-go"
 	"github.com/opentracing-contrib/go-stdlib/nethttp"
@@ -11,8 +13,9 @@ import (
 )
 
 var (
-	serverPort = ":3001"
-	catString  = "hello, cat!"
+	serverPort   = ":3001"
+	catString    = "hello, cat!"
+	traceVerbose = os.Getenv("TRACE_LEVEL") == "local"
 )
 
 func main() {
@@ -34,8 +37,10 @@ func main() {
 	http.ListenAndServe(serverPort, mw)
 }
 
-func getCat() {
-
+func getCat(ctx context.Context) {
+	ctx, localSpan := withLocalSpan(ctx)
+	// do stuff
+	finishLocalSpan(localSpan)
 }
 
 func annotateCat() {
@@ -43,9 +48,19 @@ func annotateCat() {
 }
 
 func withLocalSpan(ctx context.Context) (context.Context, opentracing.Span) {
-	return nil, nil
+	if traceVerbose {
+		pc, _, _, ok := runtime.Caller(1)
+		callerFn := runtime.FuncForPC(pc)
+		if ok && callerFn != nil {
+			span, ctx := opentracing.StartSpanFromContext(ctx, callerFn.Name())
+			return ctx, span
+		}
+	}
+	return ctx, opentracing.SpanFromContext(ctx)
 }
 
 func finishLocalSpan(span opentracing.Span) {
-
+	if traceVerbose {
+		span.Finish()
+	}
 }
